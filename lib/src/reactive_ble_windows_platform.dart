@@ -9,9 +9,11 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
   // Scan related variables
   StreamController<int>? _startScanStreamController;
   List<Uuid> _scanWithServices = [];
+  Map<String, String> _nameCache = {};
 
   // Connection related variables
-  final _connectionsStreamController = StreamController<ConnectionStateUpdate>.broadcast();
+  final _connectionsStreamController =
+      StreamController<ConnectionStateUpdate>.broadcast();
   Map<String, StreamSubscription> _connectionsSubscriptionsMap = {};
   Map<String, StreamController<int>> _connectStreamControllersMap = {};
 
@@ -58,14 +60,17 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
       print("Scanning with an already scanning interface!");
     }
     _scanWithServices = List.of(withServices);
+    _nameCache.clear();
     WinBle.startScanning();
-    _startScanStreamController = StreamController(onListen: () {
-    }, onCancel: () {
-      WinBle.stopScanning();
-      _startScanStreamController?.close();
-      _startScanStreamController = null;
-    });
-    _startScanStreamController!.sink.add(0); // Hack: this is needed to start the scan stream
+    _startScanStreamController = StreamController(
+        onListen: () {},
+        onCancel: () {
+          WinBle.stopScanning();
+          _startScanStreamController?.close();
+          _startScanStreamController = null;
+        });
+    _startScanStreamController!.sink
+        .add(0); // Hack: this is needed to start the scan stream
     return _startScanStreamController!.stream;
   }
 
@@ -74,19 +79,35 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     return WinBle.scanStream.where((event) {
       if (_scanWithServices.isEmpty) return true;
       return event.serviceUuids
-          .map<Uuid>((dynamic e) => Uuid.parse(e.toString().replaceAll("{", "").replaceAll("}", "")))
+          .map<Uuid>((dynamic e) =>
+              Uuid.parse(e.toString().replaceAll("{", "").replaceAll("}", "")))
           .any((element) => _scanWithServices.contains(element));
-    }).map((event) => ScanResult(
-            result: Result<DiscoveredDevice, GenericFailure<ScanFailure>?>.success(DiscoveredDevice(
-          id: event.address,
-          name: event.name,
-          serviceData: const {},
-          manufacturerData: event.manufacturerData,
-          rssi: int.tryParse(event.rssi) ?? 0,
-          serviceUuids: event.serviceUuids
-              .map<Uuid>((dynamic e) => Uuid.parse(e.toString().replaceAll("{", "").replaceAll("}", "")))
-              .toList(growable: false),
-        ))));
+    }).map((event) {
+      // Caching the name, otherwise in some circumstances the scan can respond with
+      // the same device many times and sometimes the device doesn't have the name
+      // TODO: check if this behavior is present in other fields of the scan
+      String name = event.name;
+      if (name.isEmpty){
+        name = _nameCache[event.address] ?? "";
+      }else{
+        _nameCache[event.address] = name;
+      }
+
+      return ScanResult(
+          result:
+              Result<DiscoveredDevice, GenericFailure<ScanFailure>?>.success(
+                  DiscoveredDevice(
+        id: event.address,
+        name: name,
+        serviceData: const {},
+        manufacturerData: event.manufacturerData,
+        rssi: int.tryParse(event.rssi) ?? 0,
+        serviceUuids: event.serviceUuids
+            .map<Uuid>((dynamic e) => Uuid.parse(
+                e.toString().replaceAll("{", "").replaceAll("}", "")))
+            .toList(growable: false),
+      )));
+    });
   }
 
   Stream<void> connectToDevice(
@@ -106,7 +127,8 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     );
     _connectStreamControllersMap[id] = StreamController<int>(
       onCancel: () => _onConnectCancel(id),
-      onListen: () => _connectStreamControllersMap[id]?.add(1), // To start the listen from the interface
+      onListen: () => _connectStreamControllersMap[id]
+          ?.add(1), // To start the listen from the interface
     );
 
     return _connectStreamControllersMap[id]!.stream;
@@ -123,7 +145,9 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
       return;
     }
 
-    final state = isConnected ? DeviceConnectionState.connected : DeviceConnectionState.disconnected;
+    final state = isConnected
+        ? DeviceConnectionState.connected
+        : DeviceConnectionState.disconnected;
 
     _connectionsStreamController.add(ConnectionStateUpdate(
       deviceId: id,
@@ -147,32 +171,41 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     await WinBle.disconnect(deviceId);
   }
 
-  Future<List<DiscoveredService>> discoverServices(String deviceId, {bool forceRefresh = true}) async {
+  Future<List<DiscoveredService>> discoverServices(String deviceId,
+      {bool forceRefresh = true}) async {
     final servicesList = <DiscoveredService>[];
 
-    final discoveredServices = await WinBle.discoverServices(deviceId, forceRefresh: forceRefresh);
+    final discoveredServices =
+        await WinBle.discoverServices(deviceId, forceRefresh: forceRefresh);
 
     for (final service in discoveredServices) {
       try {
         List<BleCharacteristic> bleCharacteristics =
-            await WinBle.discoverCharacteristics(address: deviceId, serviceId: service, forceRefresh: forceRefresh);
+            await WinBle.discoverCharacteristics(
+                address: deviceId,
+                serviceId: service,
+                forceRefresh: forceRefresh);
 
-        final serviceUuid = Uuid.parse(service.replaceAll("{", "").replaceAll("}", ""));
+        final serviceUuid =
+            Uuid.parse(service.replaceAll("{", "").replaceAll("}", ""));
 
         servicesList.add(DiscoveredService(
             serviceId: serviceUuid,
             serviceInstanceId: service,
             characteristicIds: bleCharacteristics
-                .map((e) => Uuid.parse(e.uuid.replaceAll("{", "").replaceAll("}", "")))
+                .map((e) =>
+                    Uuid.parse(e.uuid.replaceAll("{", "").replaceAll("}", "")))
                 .toList(growable: false),
             characteristics: bleCharacteristics
                 .map((e) => DiscoveredCharacteristic(
-                    characteristicId: Uuid.parse(e.uuid.replaceAll("{", "").replaceAll("}", "")),
+                    characteristicId: Uuid.parse(
+                        e.uuid.replaceAll("{", "").replaceAll("}", "")),
                     characteristicInstanceId: e.uuid,
                     serviceId: serviceUuid,
                     isReadable: e.properties.read ?? false,
                     isWritableWithResponse: e.properties.write ?? false,
-                    isWritableWithoutResponse: e.properties.writeWithoutResponse ?? false,
+                    isWritableWithoutResponse:
+                        e.properties.writeWithoutResponse ?? false,
                     isNotifiable: e.properties.notify ?? false,
                     isIndicatable: e.properties.indicate ?? false))
                 .toList(growable: false)));
@@ -213,21 +246,25 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     CharacteristicInstance characteristic,
     List<int> value,
   ) async {
-    return await _writeCharacteristicImpl(characteristic, value, withResponse: true);
+    return await _writeCharacteristicImpl(characteristic, value,
+        withResponse: true);
   }
 
   Future<WriteCharacteristicInfo> writeCharacteristicWithoutResponse(
     CharacteristicInstance characteristic,
     List<int> value,
   ) async {
-    return await _writeCharacteristicImpl(characteristic, value, withResponse: false);
+    return await _writeCharacteristicImpl(characteristic, value,
+        withResponse: false);
   }
 
   Stream<CharacteristicValue> get charValueUpdateStream {
     if (_charateristicsStreamController == null) {
       _charateristicsStreamController =
-          StreamController<CharacteristicValue>.broadcast(onCancel: _onCharacteristicStreamControllerClosed);
-      _characteristicStreamSubscriptions = WinBle.characteristicValueStream.listen((event) {
+          StreamController<CharacteristicValue>.broadcast(
+              onCancel: _onCharacteristicStreamControllerClosed);
+      _characteristicStreamSubscriptions =
+          WinBle.characteristicValueStream.listen((event) {
         final parsed = _characteristicFromWinBleStream(event);
         _charateristicsStreamController!.add(parsed);
       });
@@ -243,7 +280,8 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     ).asStream().asBroadcastStream();
   }
 
-  Future<void> stopSubscribingToNotifications(CharacteristicInstance characteristic) async {
+  Future<void> stopSubscribingToNotifications(
+      CharacteristicInstance characteristic) async {
     await WinBle.unSubscribeFromCharacteristic(
       address: characteristic.deviceId,
       serviceId: characteristic.serviceInstanceId,
@@ -268,12 +306,14 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
           characteristic: characteristic.characteristicInstanceId,
           data: Uint8List.fromList(value),
           writeWithResponse: withResponse);
-      return WriteCharacteristicInfo(characteristic: characteristic, result: Result.success(Unit()));
+      return WriteCharacteristicInfo(
+          characteristic: characteristic, result: Result.success(Unit()));
     } catch (e) {
       return WriteCharacteristicInfo(
           characteristic: characteristic,
-          result: Result.failure(
-              GenericFailure(code: WriteCharacteristicFailure.unknown, message: 'Write characteristic failed!')));
+          result: Result.failure(GenericFailure(
+              code: WriteCharacteristicFailure.unknown,
+              message: 'Write characteristic failed!')));
     }
   }
 
@@ -289,9 +329,15 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     return CharacteristicValue(
         characteristic: CharacteristicInstance(
           deviceId: event["address"],
-          characteristicId: Uuid.parse(event["characteristicId"].toString().replaceAll("{", "").replaceAll("}", "")),
+          characteristicId: Uuid.parse(event["characteristicId"]
+              .toString()
+              .replaceAll("{", "")
+              .replaceAll("}", "")),
           characteristicInstanceId: event["characteristicId"],
-          serviceId: Uuid.parse(event["serviceId"].toString().replaceAll("{", "").replaceAll("}", "")),
+          serviceId: Uuid.parse(event["serviceId"]
+              .toString()
+              .replaceAll("{", "")
+              .replaceAll("}", "")),
           serviceInstanceId: event["serviceId"],
         ),
         result: Result.success((event["value"] as List).cast<int>()));
