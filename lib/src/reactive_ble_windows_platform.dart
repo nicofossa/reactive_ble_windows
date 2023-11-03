@@ -87,9 +87,9 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
       // the same device many times and sometimes the device doesn't have the name
       // TODO: check if this behavior is present in other fields of the scan
       String name = event.name;
-      if (name.isEmpty){
+      if (name.isEmpty) {
         name = _nameCache[event.address] ?? "";
-      }else{
+      } else {
         _nameCache[event.address] = name;
       }
 
@@ -106,6 +106,7 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
             .map<Uuid>((dynamic e) => Uuid.parse(
                 e.toString().replaceAll("{", "").replaceAll("}", "")))
             .toList(growable: false),
+        // TODO: handle connectable property
       )));
     });
   }
