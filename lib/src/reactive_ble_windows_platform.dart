@@ -25,7 +25,7 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
 
   @override
   Future<void> initialize() async {
-    await WinBle.initialize(serverPath: await WinServer.path);
+    await WinBle.initialize(serverPath: await WinServer.path());
   }
 
   @override
