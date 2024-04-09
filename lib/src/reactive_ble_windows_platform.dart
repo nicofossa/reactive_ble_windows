@@ -222,25 +222,18 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     return discoverServices(deviceId, forceRefresh: false);
   }
 
-  Stream<void> readCharacteristic(CharacteristicInstance characteristic) {
-    StreamController controller = StreamController();
-    WinBle.read(
+  Stream<void> readCharacteristic(
+      CharacteristicInstance characteristic) async* {
+    final data = await WinBle.read(
       address: characteristic.deviceId,
       serviceId: characteristic.serviceInstanceId,
       characteristicId: characteristic.characteristicInstanceId,
-    ).then((value) async {
-      controller.add(1);
-      // FIXME: hack! This is needed because otherwise the library will be listening after the value is added to the stream
-      await Future.delayed(Duration(milliseconds: 100));
-      return value;
-    }).then((data) async {
-      _charateristicsStreamController?.add(CharacteristicValue(
-        characteristic: characteristic,
-        result: Result.success(data),
-      ));
-      controller.close();
-    });
-    return controller.stream;
+    );
+    yield 0;
+    _charateristicsStreamController?.add(CharacteristicValue(
+      characteristic: characteristic,
+      result: Result.success(data),
+    ));
   }
 
   Future<WriteCharacteristicInfo> writeCharacteristicWithResponse(
@@ -273,12 +266,14 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
     return _charateristicsStreamController!.stream;
   }
 
-  Stream<void> subscribeToNotifications(CharacteristicInstance characteristic) {
-    return WinBle.subscribeToCharacteristic(
+  Stream<void> subscribeToNotifications(
+      CharacteristicInstance characteristic) async* {
+    await WinBle.subscribeToCharacteristic(
       address: characteristic.deviceId,
       serviceId: characteristic.serviceInstanceId,
       characteristicId: characteristic.characteristicInstanceId,
-    ).asStream().asBroadcastStream();
+    );
+    yield 0;
   }
 
   Future<void> stopSubscribingToNotifications(
