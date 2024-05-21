@@ -224,16 +224,15 @@ class ReactiveBleWindowsPlatform extends ReactiveBlePlatform {
 
   Stream<void> readCharacteristic(
       CharacteristicInstance characteristic) async* {
-    final data = await WinBle.read(
+    WinBle.read(
       address: characteristic.deviceId,
       serviceId: characteristic.serviceInstanceId,
       characteristicId: characteristic.characteristicInstanceId,
-    );
+    ).then((data) => _charateristicsStreamController?.add(CharacteristicValue(
+          characteristic: characteristic,
+          result: Result.success(data),
+        )));
     yield 0;
-    _charateristicsStreamController?.add(CharacteristicValue(
-      characteristic: characteristic,
-      result: Result.success(data),
-    ));
   }
 
   Future<WriteCharacteristicInfo> writeCharacteristicWithResponse(
