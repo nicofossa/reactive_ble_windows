@@ -12,7 +12,11 @@ dependencies:
   flutter:
     sdk: flutter
   reactive_ble_platform_interface: ^5.3.1
-  win_ble: ^1.1.1
+  win_ble:
+    git:
+      url: git@github.com:nicofossa/win_ble.git
+      ref: fix/disconnection-cleanup
+
 
 dev_dependencies:
   build_runner: ^2.3.3
