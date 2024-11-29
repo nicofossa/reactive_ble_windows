@@ -15,8 +15,7 @@ dependencies:
   win_ble:
     git:
       url: git@github.com:nicofossa/win_ble.git
-      ref: fix/disconnection-cleanup
-
+      ref: features/logger
 
 dev_dependencies:
   build_runner: ^2.3.3
